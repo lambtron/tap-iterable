@@ -1,0 +1,58 @@
+{
+  "type": [
+    "null",
+    "object"
+  ],
+  "properties": {
+    "templateId": {
+      "type": [
+        "null",
+        "number"
+      ]
+    },
+    "createdAt": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "updatedAt": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    },
+    "name": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "creatorUserId": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "messageTypeId": {
+      "type": [
+        "null",
+        "number"
+      ]
+    },
+    "campaignId": {
+      "type": [
+        "null",
+        "number"
+      ]
+    },
+    "clientTemplateId": {
+      "type": [
+        "null",
+        "string"
+      ]
+    }
+  }
+}

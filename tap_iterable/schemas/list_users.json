@@ -1,0 +1,27 @@
+{
+  "type": [
+    "null",
+    "object"
+  ],
+  "properties": {
+    "email": {
+      "type": [
+        "null",
+        "string"
+      ]
+    },
+    "listId": {
+      "type": [
+        "null",
+        "integer"
+      ]
+    },
+    "updatedAt": {
+      "type": [
+        "null",
+        "string"
+      ],
+      "format": "date-time"
+    }
+  }
+}
