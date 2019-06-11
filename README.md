@@ -9,12 +9,11 @@ This tap:
 - Pulls raw data from [iterable](https://iterable.com/developers/)
 - Extracts the following resources:
   + lists
-  + users
+  + list_users
   + campaigns
   + message_types
   + templates
   + metadata
-  + 
 - Outputs the schema for each resource
 - Incrementally pulls data based on the input state
 
@@ -53,7 +52,7 @@ $ pip install tap-iterable
 First, clone this repo. Then, in the directory:
 
 ```
-$ mkvirtualenv -p python3 tap-iterable
+$ python -m venv tap-iterable
 $ make dev
 ```
 
