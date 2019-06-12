@@ -8,6 +8,7 @@ import json
 import datetime
 import pytz
 import singer
+import time
 from singer import metadata
 from singer import utils
 from singer.metrics import Point
@@ -23,14 +24,15 @@ def get_abs_path(path):
     return os.path.join(os.path.dirname(os.path.realpath(__file__)), path)
 
 
-def needs_parse_to_date(string):
-    if isinstance(string, str):
-        try: 
-            parse(string)
-            return True
-        except ValueError:
-            return False
-    return False
+def epoch_to_datetime_string(milliseconds):
+    datetime_string = None
+    try:
+        datetime_string = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime(milliseconds / 1000))
+    except TypeError:
+        # If fails, it means format already datetime string.
+        datetime_string = milliseconds
+        pass
+    return datetime_string
 
 
 class Stream():
@@ -49,34 +51,43 @@ class Stream():
     def is_session_bookmark_old(self, value):
         if self.session_bookmark is None:
             return True
-        return utils.strptime_with_tz(value) > utils.strptime_with_tz(self.session_bookmark)
+        # Assume value is in epoch milliseconds.
+        value_in_date_time = epoch_to_datetime_string(value)
+        return utils.strptime_with_tz(value_in_date_time) > utils.strptime_with_tz(self.session_bookmark)
 
 
     def update_session_bookmark(self, value):
-        if self.is_session_bookmark_old(value):
-            self.session_bookmark = value
+        # Assume value is epoch milliseconds.
+        value_in_date_time = epoch_to_datetime_string(value)
+        if self.is_session_bookmark_old(value_in_date_time):
+            self.session_bookmark = value_in_date_time
 
 
+    # Reads and converts bookmark from state.
     def get_bookmark(self, state, name=None):
         name = self.name if not name else name
         return (singer.get_bookmark(state, name, self.replication_key)) or Context.config["start_date"]
 
 
+    # Converts and writes bookmark to state.
     def update_bookmark(self, state, value, name=None):
         name = self.name if not name else name
         # when `value` is None, it means to set the bookmark to None
-        if value is None or self.is_bookmark_old(state, value, name):
-            singer.write_bookmark(state, name, self.replication_key, value)
+        # Assume value is epoch time
+        value_in_date_time = epoch_to_datetime_string(value)
+        if value_in_date_time is None or self.is_bookmark_old(state, value_in_date_time, name):
+            singer.write_bookmark(state, name, self.replication_key, value_in_date_time)
 
 
     def is_bookmark_old(self, state, value, name=None):
+        # Assume value is epoch time.
+        value_in_date_time = epoch_to_datetime_string(value)
         current_bookmark = self.get_bookmark(state, name)
-        return utils.strptime_with_tz(value) > utils.strptime_with_tz(current_bookmark)
+        return utils.strptime_with_tz(value_in_date_time) > utils.strptime_with_tz(current_bookmark)
 
 
-    def bookmark_earlier_than(self, item):
-        current_bookmark = self.get_bookmark(state, name)
-        return utils.strptime_with_tz(value) > utils.strptime_with_tz(current_bookmark)
+    def get_replication_value(self, item):
+        return item[self.replication_key]
 
 
     def load_schema(self):
@@ -87,26 +98,11 @@ class Stream():
 
 
     def load_metadata(self):
-        schema = self.load_schema()
-        mdata = metadata.new()
-
-        mdata = metadata.write(mdata, (), 'table-key-properties', self.key_properties)
-        mdata = metadata.write(mdata, (), 'forced-replication-method', self.replication_method)
-
-        if self.replication_key:
-            mdata = metadata.write(mdata, (), 'valid-replication-keys', [self.replication_key])
-
-        for field_name in schema['properties'].keys():
-            if field_name in self.key_properties or field_name == self.replication_key:
-                mdata = metadata.write(mdata, ('properties', field_name), 'inclusion', 'automatic')
-            else:
-                mdata = metadata.write(mdata, ('properties', field_name), 'inclusion', 'available')
-
-        return metadata.to_list(mdata)
-
-
-    def get_replication_value(self, item):
-        return item[self.replication_key]
+        return metadata.get_standard_metadata(schema=self.load_schema(), 
+                                              schema_name=self.name, 
+                                              key_properties=self.key_properties, 
+                                              valid_replication_keys=[self.replication_key], 
+                                              replication_method=self.replication_method)
 
 
     # The main sync function.
@@ -115,17 +111,16 @@ class Stream():
         bookmark = self.get_bookmark(state)
         res = get_data(self.replication_key, bookmark)
 
-        for item in res:
-            if self.replication_method == "INCREMENTAL":
-                if self.is_bookmark_old(state, self.get_replication_value(item)):
-                    self.update_session_bookmark(self.get_replication_value(item))
-                    yield (self.stream, item)
+        if self.replication_method == "INCREMENTAL":
+            # These streams results are not ordered, so store highest value bookmark in session.
+            for item in res:
+                self.update_session_bookmark(self.get_replication_value(item))
+                yield (self.stream, item)
+            self.update_bookmark(state, self.session_bookmark)
 
-            else:
-                yield (self.stream, item)        
-
-        # After the sync, then set the bookmark based off session_bookmark.
-        self.update_bookmark(state, self.session_bookmark)
+        else:
+            for item in res:
+                yield (self.stream, item)
 
 
 class Lists(Stream):
@@ -133,7 +128,7 @@ class Lists(Stream):
     replication_method = "FULL_TABLE"
 
 
-class List_Users(Stream):
+class ListUsers(Stream):
     name = "list_users"
     replication_method = "FULL_TABLE"
 
@@ -149,7 +144,7 @@ class Channels(Stream):
     replication_method = "FULL_TABLE"
 
 
-class Message_Types(Stream):
+class MessageTypes(Stream):
     name = "message_types"
     replication_method = "FULL_TABLE"
 
@@ -167,73 +162,78 @@ class Metadata(Stream):
     key_properties = [ "key" ]
 
 
-class Email_Bounce(Stream):
+class EmailBounce(Stream):
     name = "email_bounce"
     replication_method = "INCREMENTAL"
     replication_key = "createdAt"
     key_properties = [ "messageId" ]
 
 
-class Email_Click(Stream):
+class EmailClick(Stream):
     name = "email_click"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
+    replication_key = "itblInternal.documentUpdatedAt"
 
     def get_replication_value(self, item):
         return item["itblInternal"]["documentUpdatedAt"]
 
 
-
-class Email_Complaint(Stream):
+class EmailComplaint(Stream):
     name = "email_complaint"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
+    replication_key = "itblInternal.documentUpdatedAt"
 
     def get_replication_value(self, item):
         return item["itblInternal"]["documentUpdatedAt"]
 
 
-
-class Email_Open(Stream):
+class EmailOpen(Stream):
     name = "email_open"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
+    replication_key = "itblInternal.documentUpdatedAt"
 
     def get_replication_value(self, item):
         return item["itblInternal"]["documentUpdatedAt"]
 
 
-class Email_Send(Stream):
+class EmailSend(Stream):
     name = "email_send"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
+    replication_key = "itblInternal.documentUpdatedAt"
 
     def get_replication_value(self, item):
         return item["itblInternal"]["documentUpdatedAt"]
 
 
-class Email_Send_Skip(Stream):
+class EmailSendSkip(Stream):
     name = "email_send_skip"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
+    replication_key = "itblInternal.documentUpdatedAt"
 
     def get_replication_value(self, item):
         return item["itblInternal"]["documentUpdatedAt"]
 
 
-class Email_Subscribe(Stream):
+class EmailSubscribe(Stream):
     name = "email_subscribe"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
+    replication_key = "itblInternal.documentUpdatedAt"
 
     def get_replication_value(self, item):
         return item["itblInternal"]["documentUpdatedAt"]
 
 
-class Email_Unsubscribe(Stream):
+class EmailUnsubscribe(Stream):
     name = "email_unsubscribe"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
+    replication_key = "itblInternal.documentUpdatedAt"
 
     def get_replication_value(self, item):
         return item["itblInternal"]["documentUpdatedAt"]
@@ -243,6 +243,7 @@ class Users(Stream):
     name = "users"
     replication_method = "INCREMENTAL"
     key_properties = [ "userId" ]
+    replication_key = "itblInternal.documentUpdatedAt"
 
     def get_replication_value(self, item):
         return item["itblInternal"]["documentUpdatedAt"]
@@ -250,20 +251,20 @@ class Users(Stream):
 
 STREAMS = {
     "lists": Lists,
-    "list_users": List_Users,
+    "list_users": ListUsers,
     "campaigns": Campaigns,
     "channels": Channels,
-    "message_types": Message_Types,
+    "message_types": MessageTypes,
     "templates": Templates,
     "metadata": Metadata,
-    "email_bounce": Email_Bounce,
-    "email_click": Email_Click,
-    "email_complaint": Email_Complaint,
-    "email_open": Email_Open,
-    "email_send": Email_Send,
-    "email_send_skip": Email_Send_Skip,
-    "email_subscribe": Email_Subscribe,
-    "email_unsubscribe": Email_Unsubscribe,
+    "email_bounce": EmailBounce,
+    "email_click": EmailClick,
+    "email_complaint": EmailComplaint,
+    "email_open": EmailOpen,
+    "email_send": EmailSend,
+    "email_send_skip": EmailSendSkip,
+    "email_subscribe": EmailSubscribe,
+    "email_unsubscribe": EmailUnsubscribe,
     "users": Users
 }
 

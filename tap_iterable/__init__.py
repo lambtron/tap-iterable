@@ -52,9 +52,9 @@ def sync(client, catalog, state):
 
         mdata = metadata.to_map(stream.metadata)
 
-        if stream_name not in selected_stream_names:
-            logger.info("%s: Skipping - not selected", stream_name)
-            continue
+        # if stream_name not in selected_stream_names:
+        #     logger.info("%s: Skipping - not selected", stream_name)
+        #     continue
 
         key_properties = metadata.get(mdata, (), 'table-key-properties')
         singer.write_schema(stream_name, stream.schema.to_dict(), key_properties)
@@ -62,7 +62,6 @@ def sync(client, catalog, state):
         instance = STREAMS[stream_name](client)
         instance.stream = stream
         counter_value = sync_stream(state, instance)
-        singer.write_state(state)
         logger.info("%s: Completed sync (%s rows)", stream_name, counter_value)
 
     singer.write_state(state)

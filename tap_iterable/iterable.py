@@ -10,7 +10,6 @@ import backoff
 import json
 import requests
 import logging
-import time
 
 
 logger = logging.getLogger()
@@ -22,23 +21,11 @@ class Iterable(object):
   def __init__(self, api_key, start_date=None):
     self.api_key = api_key
     self.uri = "https://api.iterable.com/api/"
-
-
-  def _epoch_to_datetime_string(self, milliseconds):
-    datetime_string = None
-    try:
-      datetime_string = time.strftime("%Y-%m-%d %H:%M:%S %Z", time.localtime(milliseconds / 1000))
-    except TypeError:
-      pass
-    return datetime_string
-
-
-  def _datetime_string_to_epoch(self, datetime_string):
-    return utils.strptime_with_tz(datetime_string).timestamp() * 1000
+    self.MAX_BYTES = 10240
+    self.CHUNK_SIZE = 512
 
 
   def _now(self):
-    # return datetime.now().strftime("%Y-%m-%d %H:%M:%S %Z")
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
@@ -81,25 +68,35 @@ class Iterable(object):
   # 
 
   def get_with_streaming(self, path, **kwargs):
+    # Since the API headers do not return content-size, we will
+    # terminate connection when we exceed a size.
+    total_chunks = 0
     response = self._get(path, stream=True, **kwargs)
-
-    # Only the dataType endpoint requires streaming.
-    for line in response.iter_lines():
+    for line in response.iter_lines(chunk_size=self.CHUNK_SIZE):
       if line:
-        try:
-          # For all dataType streams.
-          decoded_line = json.loads(line.decode('utf-8'))
-          try:
-            # `transactionalData` is only available on `emailSend`
-            # but I don't know how to modify the dict after it's been
-            # `yield`ed.
-            decoded_line["transactionalData"] = json.loads(decoded_line["transactionalData"])
-          except KeyError:
-            pass
-          yield decoded_line
-        except ValueError:
-          # For `list_users` streams if json cannot decode.
-          yield line.decode('utf-8')
+        yield line.decode('utf-8')
+
+      total_chunks += self.CHUNK_SIZE
+
+      if total_chunks > self.MAX_BYTES:
+        response.close()
+        break
+
+  # 
+  # Get data export endpoint.
+  # 
+  
+  def get_data_export(self, dataTypeName, **kwargs):
+    responses = self.get_with_streaming("export/data.json", dataTypeName=dataTypeName, **kwargs)
+    for item in responses:
+      yield json.loads(item)
+
+  #
+  # Get custom user fields, used for generating `users` schema in `discover`.
+  #
+
+  def get_user_fields(self):
+    return self.get("users/getFields")
 
   # 
   # Methods to retrieve data per stream/resource.
@@ -108,7 +105,6 @@ class Iterable(object):
   def lists(self, column_name=None, bookmark=None):
     res = self.get("lists")
     for l in res["lists"]:
-      l["createdAt"] = self._epoch_to_datetime_string(l["createdAt"])
       yield l
 
 
@@ -125,19 +121,10 @@ class Iterable(object):
         }
 
 
+  # check singer python transform epoch time
   def campaigns(self, column_name=None, bookmark=None):
     res = self.get("campaigns")
     for c in res["campaigns"]:
-      c["updatedAt"] = self._epoch_to_datetime_string(c["updatedAt"])
-      c["createdAt"] = self._epoch_to_datetime_string(c["createdAt"])
-      try: 
-        c["startAt"] = self._epoch_to_datetime_string(c["startAt"])
-      except KeyError:
-        c["startAt"] = None
-      try:
-        c["endedAt"] = self._epoch_to_datetime_string(c["endedAt"])
-      except KeyError:
-        c["endedAt"] = None
       yield c
 
 
@@ -170,8 +157,6 @@ class Iterable(object):
       for medium in message_mediums:
         res = self.get("templates", templateTypes=template_type, messageMedium=medium)
         for t in res["templates"]:
-          t["updatedAt"] = self._epoch_to_datetime_string(t["updatedAt"])
-          t["createdAt"] = self._epoch_to_datetime_string(t["createdAt"])
           yield t
 
 
@@ -181,54 +166,63 @@ class Iterable(object):
       keys = self.get("metadata/{table_name}".format(table_name=t["name"]))
       for k in keys["results"]:
         value = self.get("metadata/{table_name}/{key}".format(table_name=k["table"], key=k["key"]))
-        value["lastModified"] = self._epoch_to_datetime_string(value["lastModified"])
         yield value
 
 
   def email_bounce(self, column_name=None, bookmark=None):
     endDateTime = self._now()
-    return self.get_with_streaming("export/data.json", dataTypeName="emailBounce", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailBounce", startDateTime=bookmark, endDateTime=endDateTime)
 
 
   def email_click(self, column_name=None, bookmark=None):
     endDateTime = self._now()
-    return self.get_with_streaming("export/data.json", dataTypeName="emailClick", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailClick", startDateTime=bookmark, endDateTime=endDateTime)
 
 
   def email_complaint(self, column_name=None, bookmark=None):
     endDateTime = self._now()
-    return self.get_with_streaming("export/data.json", dataTypeName="emailComplaint", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailComplaint", startDateTime=bookmark, endDateTime=endDateTime)
 
 
   def email_open(self, column_name=None, bookmark=None):
     endDateTime = self._now()
-    return self.get_with_streaming("export/data.json", dataTypeName="emailOpen", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailOpen", startDateTime=bookmark, endDateTime=endDateTime)
 
 
   def email_send(self, column_name=None, bookmark=None):
     endDateTime = self._now()
-    return self.get_with_streaming("export/data.json", dataTypeName="emailSend", startDateTime=bookmark, endDateTime=endDateTime)
+    res = self.get_data_export(dataTypeName="emailSend", startDateTime=bookmark, endDateTime=endDateTime)
+    for item in res:
+      try:
+        item["transactionalData"] = json.loads(item["transactionalData"])
+      except KeyError:
+        pass
+      yield item
 
 
   def email_send_skip(self, column_name=None, bookmark=None):
     endDateTime = self._now()
-    return self.get_with_streaming("export/data.json", dataTypeName="emailSendSkip", startDateTime=bookmark, endDateTime=endDateTime)
+    res = self.get_data_export(dataTypeName="emailSendSkip", startDateTime=bookmark, endDateTime=endDateTime)
+    for item in res:
+      try:
+        item["transactionalData"] = json.loads(item["transactionalData"])
+      except KeyError:
+        pass
+      yield item
 
 
   def email_subscribe(self, column_name=None, bookmark=None):
     endDateTime = self._now()
-    return self.get_with_streaming("export/data.json", dataTypeName="emailSubscribe", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailSubscribe", startDateTime=bookmark, endDateTime=endDateTime)
 
 
   def email_unsubscribe(self, column_name=None, bookmark=None):
     endDateTime = self._now()
-    return self.get_with_streaming("export/data.json", dataTypeName="emailUnSubscribe", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailUnSubscribe", startDateTime=bookmark, endDateTime=endDateTime)
 
 
   def users(self, column_name=None, bookmark=None):
     endDateTime = self._now()
-    return self.get_with_streaming("export/data.json", dataTypeName="user", startDateTime=bookmark, endDateTime=endDateTime)
-
-
+    return self.get_data_export(dataTypeName="user", startDateTime=bookmark, endDateTime=endDateTime)
 
 

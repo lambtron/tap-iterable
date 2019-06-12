@@ -19,10 +19,14 @@ def sync_stream(state, instance):
         for (stream, record) in instance.sync(state):
             counter.increment()
 
-            with Transformer() as transformer:
+            with Transformer(integer_datetime_fmt="unix-milliseconds-integer-datetime-parsing") as transformer:
                 record = transformer.transform(record, stream.schema.to_dict(), metadata.to_map(stream.metadata))
             singer.write_record(stream.tap_stream_id, record)
-            if instance.replication_method == "INCREMENTAL":
-                singer.write_state(state)
+
+        if instance.replication_method == "INCREMENTAL":
+            singer.write_state(state)
 
         return counter.value
+
+
+
