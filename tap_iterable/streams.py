@@ -186,7 +186,10 @@ class EmailComplaint(Stream):
     replication_key = "itblInternal.documentUpdatedAt"
 
     def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+        try:
+            return item["itblInternal"]["documentUpdatedAt"]
+        except KeyError:
+            return item["createdAt"]
 
 
 class EmailOpen(Stream):

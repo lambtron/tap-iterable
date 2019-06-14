@@ -18,15 +18,29 @@ logger = logging.getLogger()
 """ Simple wrapper for Iterable. """
 class Iterable(object):
 
-  def __init__(self, api_key, start_date=None):
+  def __init__(self, api_key, start_date=None, api_window_in_days=30):
     self.api_key = api_key
     self.uri = "https://api.iterable.com/api/"
+    self.api_window_in_days = 30
     self.MAX_BYTES = 10240
     self.CHUNK_SIZE = 512
 
 
   def _now(self):
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+  def _daterange(self, start_date, end_date):
+    total_days = (utils.strptime_with_tz(end_date) - utils.strptime_with_tz(start_date)).days
+    if total_days >= self.api_window_in_days:
+      for n in range(int(total_days / self.api_window_in_days)):
+        yield (utils.strptime_with_tz(start_date) + n * timedelta(int(self.api_window_in_days))).strftime("%Y-%m-%d %H:%M:%S")
+    else:
+      yield start_date
+
+  def _get_end_datetime(self, startDateTime):
+    endDateTime = utils.strptime_with_tz(startDateTime) + timedelta(self.api_window_in_days)
+    return endDateTime.strftime("%Y-%m-%d %H:%M:%S")
 
 
   def retry_handler(details):
@@ -64,7 +78,7 @@ class Iterable(object):
     return response.json()
 
   #
-  # The streaming `get` request.
+  # The streaming `get` request. (DEPRECATED)
   # 
 
   def get_with_streaming(self, path, **kwargs):
@@ -87,9 +101,15 @@ class Iterable(object):
   # 
   
   def get_data_export(self, dataTypeName, **kwargs):
-    responses = self.get_with_streaming("export/data.json", dataTypeName=dataTypeName, **kwargs)
-    for item in responses:
-      yield json.loads(item)
+    now = self._now()
+    startDateTime = kwargs["startDateTime"]
+    for start_date_time in self._daterange(startDateTime, now):
+      kwargs["startDateTime"] = start_date_time
+      kwargs["endDateTime"] = self._get_end_datetime(startDateTime=start_date_time)
+      responses = self._get("export/data.json", dataTypeName=dataTypeName, **kwargs)
+      for item in responses.text.split("\n"):
+        if item:
+          yield json.loads(item)
 
   #
   # Get custom user fields, used for generating `users` schema in `discover`.
@@ -109,7 +129,6 @@ class Iterable(object):
 
 
   def list_users(self, column_name=None, bookmark=None):
-    # consider using _get_with_streaming for this.
     res = self.get("lists")
     for l in res["lists"]:
       users = self.get_with_streaming("lists/getUsers", listId=l["id"])
@@ -121,7 +140,6 @@ class Iterable(object):
         }
 
 
-  # check singer python transform epoch time
   def campaigns(self, column_name=None, bookmark=None):
     res = self.get("campaigns")
     for c in res["campaigns"]:
@@ -170,28 +188,23 @@ class Iterable(object):
 
 
   def email_bounce(self, column_name=None, bookmark=None):
-    endDateTime = self._now()
-    return self.get_data_export(dataTypeName="emailBounce", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailBounce", startDateTime=bookmark)
 
 
   def email_click(self, column_name=None, bookmark=None):
-    endDateTime = self._now()
-    return self.get_data_export(dataTypeName="emailClick", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailClick", startDateTime=bookmark)
 
 
   def email_complaint(self, column_name=None, bookmark=None):
-    endDateTime = self._now()
-    return self.get_data_export(dataTypeName="emailComplaint", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailComplaint", startDateTime=bookmark)
 
 
   def email_open(self, column_name=None, bookmark=None):
-    endDateTime = self._now()
-    return self.get_data_export(dataTypeName="emailOpen", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailOpen", startDateTime=bookmark)
 
 
   def email_send(self, column_name=None, bookmark=None):
-    endDateTime = self._now()
-    res = self.get_data_export(dataTypeName="emailSend", startDateTime=bookmark, endDateTime=endDateTime)
+    res = self.get_data_export(dataTypeName="emailSend", startDateTime=bookmark)
     for item in res:
       try:
         item["transactionalData"] = json.loads(item["transactionalData"])
@@ -201,8 +214,7 @@ class Iterable(object):
 
 
   def email_send_skip(self, column_name=None, bookmark=None):
-    endDateTime = self._now()
-    res = self.get_data_export(dataTypeName="emailSendSkip", startDateTime=bookmark, endDateTime=endDateTime)
+    res = self.get_data_export(dataTypeName="emailSendSkip", startDateTime=bookmark)
     for item in res:
       try:
         item["transactionalData"] = json.loads(item["transactionalData"])
@@ -212,17 +224,14 @@ class Iterable(object):
 
 
   def email_subscribe(self, column_name=None, bookmark=None):
-    endDateTime = self._now()
-    return self.get_data_export(dataTypeName="emailSubscribe", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailSubscribe", startDateTime=bookmark)
 
 
   def email_unsubscribe(self, column_name=None, bookmark=None):
-    endDateTime = self._now()
-    return self.get_data_export(dataTypeName="emailUnSubscribe", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="emailUnSubscribe", startDateTime=bookmark)
 
 
   def users(self, column_name=None, bookmark=None):
-    endDateTime = self._now()
-    return self.get_data_export(dataTypeName="user", startDateTime=bookmark, endDateTime=endDateTime)
+    return self.get_data_export(dataTypeName="user", startDateTime=bookmark)
 
 

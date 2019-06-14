@@ -20,7 +20,8 @@ logger = singer.get_logger()
 
 REQUIRED_CONFIG_KEYS = [
     "api_key",
-    "start_date"
+    "start_date",
+    "api_window_in_days"
 ]
 
 
@@ -52,9 +53,9 @@ def sync(client, catalog, state):
 
         mdata = metadata.to_map(stream.metadata)
 
-        # if stream_name not in selected_stream_names:
-        #     logger.info("%s: Skipping - not selected", stream_name)
-        #     continue
+        if stream_name not in selected_stream_names:
+            logger.info("%s: Skipping - not selected", stream_name)
+            continue
 
         key_properties = metadata.get(mdata, (), 'table-key-properties')
         singer.write_schema(stream_name, stream.schema.to_dict(), key_properties)
@@ -74,7 +75,8 @@ def main():
 
     creds = {
         "start_date": parsed_args.config['start_date'],
-        "api_key": parsed_args.config['api_key']
+        "api_key": parsed_args.config['api_key'],
+        "api_window_in_days": parsed_args.config['api_window_in_days']
     }
 
     client = Iterable(**creds)
