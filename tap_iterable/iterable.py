@@ -21,7 +21,7 @@ class Iterable(object):
   def __init__(self, api_key, start_date=None, api_window_in_days=30):
     self.api_key = api_key
     self.uri = "https://api.iterable.com/api/"
-    self.api_window_in_days = 30
+    self.api_window_in_days = int(api_window_in_days)
     self.MAX_BYTES = 10240
     self.CHUNK_SIZE = 512
 

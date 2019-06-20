@@ -86,10 +86,6 @@ class Stream():
         return utils.strptime_with_tz(value_in_date_time) > utils.strptime_with_tz(current_bookmark)
 
 
-    def get_replication_value(self, item):
-        return item[self.replication_key]
-
-
     def load_schema(self):
         schema_file = "schemas/{}.json".format(self.name)
         with open(get_abs_path(schema_file)) as f:
@@ -114,7 +110,7 @@ class Stream():
         if self.replication_method == "INCREMENTAL":
             # These streams results are not ordered, so store highest value bookmark in session.
             for item in res:
-                self.update_session_bookmark(self.get_replication_value(item))
+                self.update_session_bookmark(item[self.replication_key])
                 yield (self.stream, item)
             self.update_bookmark(state, self.session_bookmark)
 
@@ -173,83 +169,56 @@ class EmailClick(Stream):
     name = "email_click"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
-
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    replication_key = "createdAt"
 
 
 class EmailComplaint(Stream):
     name = "email_complaint"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
-
-    def get_replication_value(self, item):
-        try:
-            return item["itblInternal"]["documentUpdatedAt"]
-        except KeyError:
-            return item["createdAt"]
+    replication_key = "createdAt"
 
 
 class EmailOpen(Stream):
     name = "email_open"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
-
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    replication_key = "createdAt"
 
 
 class EmailSend(Stream):
     name = "email_send"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
-
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    replication_key = "createdAt"
 
 
 class EmailSendSkip(Stream):
     name = "email_send_skip"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
-
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    replication_key = "createdAt"
 
 
 class EmailSubscribe(Stream):
     name = "email_subscribe"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
-
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    replication_key = "createdAt"
 
 
 class EmailUnsubscribe(Stream):
     name = "email_unsubscribe"
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
-
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    replication_key = "createdAt"
 
 
 class Users(Stream):
     name = "users"
     replication_method = "INCREMENTAL"
     key_properties = [ "userId" ]
-    replication_key = "itblInternal.documentUpdatedAt"
-
-    def get_replication_value(self, item):
-        return item["itblInternal"]["documentUpdatedAt"]
+    replication_key = "createdAt"
 
 
 STREAMS = {
