@@ -38,6 +38,7 @@ class Iterable(object):
     else:
       yield start_date
 
+
   def _get_end_datetime(self, startDateTime):
     endDateTime = utils.strptime_with_tz(startDateTime) + timedelta(self.api_window_in_days)
     return endDateTime.strftime("%Y-%m-%d %H:%M:%S")
@@ -233,5 +234,20 @@ class Iterable(object):
 
   def users(self, column_name=None, bookmark=None):
     return self.get_data_export(dataTypeName="user", startDateTime=bookmark)
+
+
+  def get_data_export_generator(self, data_type_name, bookmark=None):
+    now = self._now()
+    kwargs = {}
+    for start_date_time in self._daterange(bookmark, now):
+      kwargs["startDateTime"] = start_date_time
+      kwargs["endDateTime"] = self._get_end_datetime(startDateTime=start_date_time)
+      def get_data():
+        return self._get("export/data.json", dataTypeName=data_type_name, **kwargs)
+      yield get_data
+
+
+
+
 
 

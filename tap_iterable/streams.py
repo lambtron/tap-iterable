@@ -119,6 +119,25 @@ class Stream():
                 yield (self.stream, item)
 
 
+    def sync_data_export(self, state):
+        get_generator = getattr(self.client, "get_data_export_generator")
+        bookmark = self.get_bookmark(state)
+        fns = get_generator(self.data_type_name, bookmark)
+        for fn in fns:
+            res = fn()
+            for item in res.text.split("\n"):
+                if item:
+                    item = json.loads(item)
+                    try:
+                        item["transactionalData"] = json.loads(item["transactionalData"])
+                    except KeyError:
+                        pass
+                    self.update_session_bookmark(item[self.replication_key])
+                    yield (self.stream, item)
+            self.update_bookmark(state, self.session_bookmark)
+            singer.write_state(state)
+
+
 class Lists(Stream):
     name = "lists"
     replication_method = "FULL_TABLE"
@@ -163,6 +182,10 @@ class EmailBounce(Stream):
     replication_method = "INCREMENTAL"
     replication_key = "createdAt"
     key_properties = [ "messageId" ]
+    data_type_name = "emailBounce"
+
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailClick(Stream):
@@ -170,6 +193,10 @@ class EmailClick(Stream):
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
     replication_key = "createdAt"
+    data_type_name = "emailClick"
+
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailComplaint(Stream):
@@ -177,6 +204,10 @@ class EmailComplaint(Stream):
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
     replication_key = "createdAt"
+    data_type_name = "emailComplaint"
+
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailOpen(Stream):
@@ -184,6 +215,10 @@ class EmailOpen(Stream):
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
     replication_key = "createdAt"
+    data_type_name = "emailOpen"
+
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailSend(Stream):
@@ -191,6 +226,10 @@ class EmailSend(Stream):
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
     replication_key = "createdAt"
+    data_type_name = "emailSend"
+
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailSendSkip(Stream):
@@ -198,6 +237,10 @@ class EmailSendSkip(Stream):
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
     replication_key = "createdAt"
+    data_type_name = "emailSendSkip"
+
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailSubscribe(Stream):
@@ -205,6 +248,10 @@ class EmailSubscribe(Stream):
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
     replication_key = "createdAt"
+    data_type_name = "emailSubscribe"
+
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class EmailUnsubscribe(Stream):
@@ -212,6 +259,10 @@ class EmailUnsubscribe(Stream):
     replication_method = "INCREMENTAL"
     key_properties = [ "messageId" ]
     replication_key = "createdAt"
+    data_type_name = "emailUnsubscribe"
+
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 class Users(Stream):
@@ -219,6 +270,10 @@ class Users(Stream):
     replication_method = "INCREMENTAL"
     key_properties = [ "userId" ]
     replication_key = "createdAt"
+    data_type_name = "user"
+
+    def sync(self, state):
+        return self.sync_data_export(state)
 
 
 STREAMS = {
