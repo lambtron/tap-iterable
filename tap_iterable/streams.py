@@ -125,9 +125,9 @@ class Stream():
         fns = get_generator(self.data_type_name, bookmark)
         for fn in fns:
             res = fn()
-            for item in res.text.split("\n"):
+            for item in res.iter_lines():
                 if item:
-                    item = json.loads(item)
+                    item = json.loads(item.decode('utf-8'))
                     try:
                         item["transactionalData"] = json.loads(item["transactionalData"])
                     except KeyError:

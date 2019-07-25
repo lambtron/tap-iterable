@@ -56,7 +56,7 @@ class Iterable(object):
                         requests.exceptions.HTTPError,
                         on_backoff=retry_handler,
                         max_tries=10)
-  def _get(self, path, stream=False, **kwargs):
+  def _get(self, path, stream=True, **kwargs):
     uri = "{uri}{path}".format(uri=self.uri, path=path)
     
     # Add query params, including `api_key`.
@@ -79,40 +79,6 @@ class Iterable(object):
     return response.json()
 
   #
-  # The streaming `get` request. (DEPRECATED)
-  # 
-
-  def get_with_streaming(self, path, **kwargs):
-    # Since the API headers do not return content-size, we will
-    # terminate connection when we exceed a size.
-    total_chunks = 0
-    response = self._get(path, stream=True, **kwargs)
-    for line in response.iter_lines(chunk_size=self.CHUNK_SIZE):
-      if line:
-        yield line.decode('utf-8')
-
-      total_chunks += self.CHUNK_SIZE
-
-      if total_chunks > self.MAX_BYTES:
-        response.close()
-        break
-
-  # 
-  # Get data export endpoint.
-  # 
-  
-  def get_data_export(self, dataTypeName, **kwargs):
-    now = self._now()
-    startDateTime = kwargs["startDateTime"]
-    for start_date_time in self._daterange(startDateTime, now):
-      kwargs["startDateTime"] = start_date_time
-      kwargs["endDateTime"] = self._get_end_datetime(startDateTime=start_date_time)
-      responses = self._get("export/data.json", dataTypeName=dataTypeName, **kwargs)
-      for item in responses.text.split("\n"):
-        if item:
-          yield json.loads(item)
-
-  #
   # Get custom user fields, used for generating `users` schema in `discover`.
   #
 
@@ -132,7 +98,10 @@ class Iterable(object):
   def list_users(self, column_name=None, bookmark=None):
     res = self.get("lists")
     for l in res["lists"]:
-      users = self.get_with_streaming("lists/getUsers", listId=l["id"])
+      kwargs = {
+        "listId": l["id"]
+      }
+      users = self._get("lists/getUsers", **kwargs)
       for user in users:
         yield {
           "email": user,
@@ -186,54 +155,6 @@ class Iterable(object):
       for k in keys["results"]:
         value = self.get("metadata/{table_name}/{key}".format(table_name=k["table"], key=k["key"]))
         yield value
-
-
-  def email_bounce(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailBounce", startDateTime=bookmark)
-
-
-  def email_click(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailClick", startDateTime=bookmark)
-
-
-  def email_complaint(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailComplaint", startDateTime=bookmark)
-
-
-  def email_open(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailOpen", startDateTime=bookmark)
-
-
-  def email_send(self, column_name=None, bookmark=None):
-    res = self.get_data_export(dataTypeName="emailSend", startDateTime=bookmark)
-    for item in res:
-      try:
-        item["transactionalData"] = json.loads(item["transactionalData"])
-      except KeyError:
-        pass
-      yield item
-
-
-  def email_send_skip(self, column_name=None, bookmark=None):
-    res = self.get_data_export(dataTypeName="emailSendSkip", startDateTime=bookmark)
-    for item in res:
-      try:
-        item["transactionalData"] = json.loads(item["transactionalData"])
-      except KeyError:
-        pass
-      yield item
-
-
-  def email_subscribe(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailSubscribe", startDateTime=bookmark)
-
-
-  def email_unsubscribe(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="emailUnSubscribe", startDateTime=bookmark)
-
-
-  def users(self, column_name=None, bookmark=None):
-    return self.get_data_export(dataTypeName="user", startDateTime=bookmark)
 
 
   def get_data_export_generator(self, data_type_name, bookmark=None):
