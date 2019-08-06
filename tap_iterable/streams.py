@@ -246,7 +246,7 @@ class EmailSendSkip(Stream):
 class EmailSubscribe(Stream):
     name = "email_subscribe"
     replication_method = "INCREMENTAL"
-    key_properties = [ "messageId" ]
+    key_properties = []
     replication_key = "createdAt"
     data_type_name = "emailSubscribe"
 
